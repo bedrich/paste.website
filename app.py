@@ -1,6 +1,6 @@
 import os
 import uuid
-from flask import Flask, render_template, request, redirect, url_for, Response, abort, flash
+from flask import Flask, render_template, request, redirect, url_for, Response, abort, flash, make_response
 import boto3
 from botocore.exceptions import ClientError
 import requests
@@ -42,7 +42,8 @@ def post():
         # something went wrong
         abort(400)
 
-    return redirect(url_for('fetch', filename=filename))
+    resp = make_response(redirect(url_for('fetch', filename=filename)))
+    return resp
 
 @app.route('/p/<filename>', methods=['GET'])
 def fetch(filename):
@@ -60,7 +61,7 @@ def fetch(filename):
     except ClientError:
         abort(404)
 
-    return Response(obj['Body'].read(), mimetype='text/plain')
+    return Response(obj['Body'].read(), mimetype=content_type)
 
 if __name__ == "__main__":
     app.run()
