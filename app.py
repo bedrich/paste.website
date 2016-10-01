@@ -11,6 +11,7 @@ CAPTCHA_SECRET = os.environ.get('CAPTCHA_SECRET')
 SESSION_SECRET = os.environ.get('SESSION_SECRET')
 COOKIE_NAME = "imnotacomputer"
 COOKIE_SECRET = os.environ.get('COOKIE_SECRET')
+LEGACY_URL_PREFIX = os.environ.get('LEGACY_URL_PREFIX')
 
 app = Flask(__name__)
 app.secret_key = SESSION_SECRET
@@ -64,10 +65,19 @@ def fetch(filename):
         # other types not allowed
         abort(404)
 
+    if ".." in filename or "/" in filename:
+        # belt and suspenders on URL "hacking"
+        abort(404)
+
     s3 = boto3.client('s3')
     try:
         obj = s3.get_object(Bucket=BUCKET, Key=filename)
     except ClientError:
+        # not found. additionally try to fetch the old roguecoders one:
+        if LEGACY_URL_PREFIX:
+            r = requests.get("{}/{}".format(LEGACY_URL_PREFIX, filename))
+            if r.status_code == 200:
+                return Response(r.content, mimetype=content_type)
         abort(404)
 
     return Response(obj['Body'].read(), mimetype=content_type)
