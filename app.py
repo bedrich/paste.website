@@ -4,35 +4,41 @@ from flask import Flask, render_template, request, redirect, url_for, Response, 
 import boto3
 from botocore.exceptions import ClientError
 import requests
+import datetime
 
 BUCKET = os.environ.get('PASTE_BUCKET')
 CAPTCHA_SECRET = os.environ.get('CAPTCHA_SECRET')
 SESSION_SECRET = os.environ.get('SESSION_SECRET')
+COOKIE_NAME = "imnotacomputer"
+COOKIE_SECRET = os.environ.get('COOKIE_SECRET')
 
 app = Flask(__name__)
 app.secret_key = SESSION_SECRET
 
 @app.route('/', methods=['GET'])
 def index():
-    return render_template('index.html')
+    skip_captcha = request.cookies.get(COOKIE_NAME) == COOKIE_SECRET
+    return render_template('index.html', skip_captcha=skip_captcha)
 
 @app.route('/', methods=['POST'])
 def post():
     code = request.form.get('code')
     if not code:
         return redirect(url_for('index'))
-    r = requests.post(
-        'https://www.google.com/recaptcha/api/siteverify',
-        data={
-            'secret': CAPTCHA_SECRET,
-            'response': request.form.get('g-recaptcha-response')
-        }
-    )
-    if r.status_code != 200:
-        abort(400)
-    if not r.json()['success']:
-        flash('Invalid CAPTCHA')
-        return redirect(url_for('index'))
+
+    if request.cookies.get(COOKIE_NAME) != COOKIE_SECRET:
+        r = requests.post(
+            'https://www.google.com/recaptcha/api/siteverify',
+            data={
+                'secret': CAPTCHA_SECRET,
+                'response': request.form.get('g-recaptcha-response')
+            }
+        )
+        if r.status_code != 200:
+            abort(400)
+        if not r.json()['success']:
+            flash('Invalid CAPTCHA')
+            return redirect(url_for('index'))
 
     filename = "{}.txt".format(uuid.uuid4())
     s3 = boto3.client('s3')
@@ -43,6 +49,9 @@ def post():
         abort(400)
 
     resp = make_response(redirect(url_for('fetch', filename=filename)))
+    # valid captcha? no need for future captchas (for a year)
+    expires = datetime.datetime.utcnow() + datetime.timedelta(days=365)
+    resp.set_cookie(COOKIE_NAME, value=COOKIE_SECRET, expires=expires, httponly=True)
     return resp
 
 @app.route('/p/<filename>', methods=['GET'])
